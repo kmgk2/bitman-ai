@@ -450,9 +450,29 @@
 // ─────────────────────────────────────────────────────────────
 //  CORS 프록시 + 네이버 API
 // ─────────────────────────────────────────────────────────────
-const PROXY = "https://corsproxy.io/?";
+const PROXIES = [
+  "https://api.allorigins.win/raw?url=",
+  "https://corsproxy.io/?",
+];
 const NAVER = "https://polling.finance.naver.com/api/realtime/domestic";
 const NAVER_FINANCE = "https://finance.naver.com";
+
+async function proxyFetch(url, isJson=true) {
+  for (const px of PROXIES) {
+    try {
+      const controller = new AbortController();
+      const tid = setTimeout(() => controller.abort(), 7000);
+      const r = await fetch(px + encodeURIComponent(url), {
+        signal: controller.signal,
+        headers: { "x-requested-with": "XMLHttpRequest" }
+      });
+      clearTimeout(tid);
+      if (!r.ok) continue;
+      return isJson ? r.json() : r.text();
+    } catch(e) { continue; }
+  }
+  throw new Error("네트워크 오류 — CORS 프록시 연결 실패");
+}
 
 const KNOWN_CODES = {
   "삼성전자":"005930","SK하이닉스":"000660","NAVER":"035420","네이버":"035420",
@@ -462,16 +482,10 @@ const KNOWN_CODES = {
   "삼성바이오로직스":"207940","카카오뱅크":"323410","하이브":"352820","두산에너빌리티":"034020",
 };
 
-async function naverFetch(url) {
-  const r = await fetch(PROXY + encodeURIComponent(url), { headers: { "x-requested-with": "XMLHttpRequest" } });
-  if (!r.ok) throw new Error("네이버 데이터 조회 실패");
-  return r.json();
-}
-
 async function getIndex() {
   const [kp, kq] = await Promise.all([
-    naverFetch(`${NAVER}/index/KOSPI`),
-    naverFetch(`${NAVER}/index/KOSDAQ`),
+    proxyFetch(`${NAVER}/index/KOSPI`),
+    proxyFetch(`${NAVER}/index/KOSDAQ`),
   ]);
   return {
     KOSPI:  { val: kp.datas[0].closePrice,  chg: kp.datas[0].fluctuationsRatio,  up: parseFloat(kp.datas[0].fluctuationsRatio) >= 0 },
@@ -480,7 +494,7 @@ async function getIndex() {
 }
 
 async function getPrice(code) {
-  const data = await naverFetch(`${NAVER}/stock/${code}`);
+  const data = await proxyFetch(`${NAVER}/stock/${code}`);
   const d = data.datas[0];
   const n = s => parseInt((s||"0").toString().replace(/,/g,"").replace(/[^0-9-]/g,"")) || 0;
   const f = s => parseFloat((s||"0").toString().replace(/,/g,"")) || 0;
@@ -497,8 +511,7 @@ async function getPrice(code) {
 
 async function getTopRising() {
   const url = `${NAVER_FINANCE}/sise/sise_rise.naver?sosok=0`;
-  const r = await fetch(PROXY + encodeURIComponent(url));
-  const text = await r.text();
+  const text = await proxyFetch(url, false);
   const parser = new DOMParser();
   const doc = parser.parseFromString(text, "text/html");
   const rows = doc.querySelectorAll("table.type_2 tr");
@@ -524,8 +537,7 @@ async function getTopRising() {
 
 async function getSupply(code) {
   const url = `${NAVER_FINANCE}/item/frgn.naver?code=${code}`;
-  const r = await fetch(PROXY + encodeURIComponent(url));
-  const text = await r.text();
+  const text = await proxyFetch(url, false);
   const parser = new DOMParser();
   const doc = parser.parseFromString(text, "text/html");
   const rows = doc.querySelectorAll("table.type2 tr");
@@ -598,16 +610,31 @@ Return ONLY:
 }
 
 async function fetchTop5() {
-  const stocks = await getTopRising();
-  const result = await callClaude(
+  let stocks = [];
+  try {
+    stocks = await getTopRising();
+  } catch(e) {}
+
+  // 네이버 크롤링 실패 시 → Claude AI가 직접 추천
+  if (!stocks || stocks.length === 0) {
+    return callClaude(
+      "You are a Korean stock AI analyst. Return ONLY valid JSON. No markdown.",
+      `오늘 날짜: ${new Date().toLocaleDateString("ko-KR")}
+네이버 실시간 데이터 수집 불가. 대신 현재 시장 상황을 바탕으로 오늘 주목할 코스피/코스닥 TOP5를 추천하세요.
+반드시 실제 존재하는 종목코드를 사용하세요.
+Return ONLY:
+{"updated":"${new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}","ai_count":4,"source":"AI 자체 추천","stocks":[{"rank":1,"code":"005930","name":"삼성전자","price":75000,"change_pct":"2.1%","consensus":4,"reason":""},{"rank":2,"code":"000660","name":"SK하이닉스","price":195000,"change_pct":"1.8%","consensus":4,"reason":""},{"rank":3,"code":"035420","name":"NAVER","price":225000,"change_pct":"1.5%","consensus":3,"reason":""},{"rank":4,"code":"005380","name":"현대차","price":215000,"change_pct":"1.2%","consensus":3,"reason":""},{"rank":5,"code":"012450","name":"한화에어로스페이스","price":580000,"change_pct":"1.0%","consensus":3,"reason":""}]}`
+    );
+  }
+
+  return callClaude(
     "You are a Korean stock AI analyst. Return ONLY valid JSON. No markdown.",
     `코스피 실제 상승률 상위:
 ${stocks.map(s=>`${s.rank}. ${s.name}(${s.code}) ${s.price}원 ${s.change_pct}`).join("\n")}
 
 각 종목 AI 합의 근거 추가:
-Return ONLY: {"updated":"${new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}","ai_count":4,"stocks":${JSON.stringify(stocks.map(s=>({...s,consensus:Math.floor(Math.random()*2)+3,reason:""})))}}`
+Return ONLY: {"updated":"${new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})}","ai_count":4,"source":"네이버 실시간","stocks":${JSON.stringify(stocks.map(s=>({...s,consensus:Math.floor(Math.random()*2)+3,reason:""})))}}`
   );
-  return result;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -854,8 +881,7 @@ async function runAnalysis(name, preCode) {
 async function searchCode(name) {
   try {
     const url = `https://ac.finance.naver.com/ac?q=${encodeURIComponent(name)}&q_enc=UTF-8&target=stock`;
-    const r = await fetch(PROXY + encodeURIComponent(url));
-    const data = await r.json();
+    const data = await proxyFetch(url);
     const items = (data.items||[[]])[0];
     return items?.[0]?.[0] || null;
   } catch { return null; }
