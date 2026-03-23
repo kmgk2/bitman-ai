@@ -368,17 +368,79 @@
   </div>
 
   <!-- ══════════════════════════════════
-       MY
+       MY / SETTINGS
   ═══════════════════════════════════ -->
   <div id="screen-my" class="screen hidden">
     <div class="header">
       <div class="logo-box" style="font-size:16px">👤</div>
       <div class="header-title"><div class="main" style="font-size:16px">마이페이지</div></div>
     </div>
-    <div class="pad" style="text-align:center;padding-top:60px">
-      <div style="font-size:48px;margin-bottom:16px">🚧</div>
-      <div style="font-size:20px;font-weight:700">준비 중입니다</div>
-      <p style="color:var(--muted);font-size:14px;margin-top:8px">곧 오픈 예정</p>
+    <div class="pad">
+      <!-- API 키 설정 카드 -->
+      <div class="card-sm" style="margin-bottom:16px">
+        <div style="font-weight:700;font-size:15px;margin-bottom:6px">🔑 Claude API 키 설정</div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6">
+          Anthropic Console에서 발급받은 API 키를 입력하세요.<br>
+          키는 이 기기에만 저장됩니다.
+        </p>
+        <div style="background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:12px">
+          <input id="api-key-input" type="password"
+            placeholder="sk-ant-api03-..."
+            style="background:none;border:none;color:var(--white);width:100%;font-size:13px;outline:none;font-family:'IBM Plex Mono',monospace"
+          />
+        </div>
+        <button class="btn-gold" onclick="saveApiKey()" style="margin-bottom:10px">저장하기</button>
+        <div id="key-status" style="font-size:12px;text-align:center;color:var(--muted);min-height:20px"></div>
+      </div>
+
+      <!-- API 키 발급 안내 -->
+      <div style="background:#0a1020;border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:16px">
+        <div style="font-weight:700;margin-bottom:10px;color:var(--blue)">📋 API 키 발급 방법</div>
+        <div style="font-size:13px;color:var(--text);line-height:2">
+          1️⃣ <strong style="color:var(--gold)">console.anthropic.com</strong> 접속<br>
+          2️⃣ 로그인 → <strong>API Keys</strong> 메뉴 클릭<br>
+          3️⃣ <strong>Create Key</strong> 버튼 클릭<br>
+          4️⃣ 생성된 키(<code style="color:var(--gold);font-size:11px">sk-ant-...</code>) 복사<br>
+          5️⃣ 위 입력창에 붙여넣기 → 저장
+        </div>
+      </div>
+
+      <div style="background:#120800;border:1px solid #3a2000;border-radius:12px;padding:12px 14px;font-size:11px;color:#cc8844;line-height:1.6">
+        ⚠️ API 키는 이 기기의 브라우저(localStorage)에만 저장되며 외부로 전송되지 않습니다. 단, Claude API 사용 요금이 발생할 수 있습니다.
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════
+       SETTINGS (API키 첫 입력 전용)
+  ═══════════════════════════════════ -->
+  <div id="screen-settings" class="screen hidden">
+    <div style="background:var(--bg2);padding:40px 16px 24px;border-bottom:1px solid var(--border);text-align:center">
+      <div style="font-size:48px;margin-bottom:16px">🔑</div>
+      <h2 style="font-size:24px;font-weight:900;margin-bottom:8px">API 키 설정 필요</h2>
+      <p style="color:var(--muted);font-size:13px;line-height:1.7">앱을 사용하려면<br>Claude API 키가 필요합니다</p>
+    </div>
+    <div class="pad">
+      <div class="card-sm" style="margin-bottom:16px">
+        <div style="font-weight:700;font-size:15px;margin-bottom:12px">API 키 입력</div>
+        <div style="background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:12px">
+          <input id="api-key-input2" type="password"
+            placeholder="sk-ant-api03-..."
+            style="background:none;border:none;color:var(--white);width:100%;font-size:13px;outline:none;font-family:'IBM Plex Mono',monospace"
+          />
+        </div>
+        <button class="btn-gold" onclick="saveApiKey2()">저장하고 시작하기 →</button>
+        <div id="key-status2" style="font-size:12px;text-align:center;color:var(--muted);margin-top:10px;min-height:20px"></div>
+      </div>
+      <div style="background:#0a1020;border:1px solid var(--border);border-radius:14px;padding:16px">
+        <div style="font-weight:700;margin-bottom:10px;color:var(--blue)">📋 API 키 발급 방법</div>
+        <div style="font-size:13px;color:var(--text);line-height:2">
+          1️⃣ <strong style="color:var(--gold)">console.anthropic.com</strong> 접속<br>
+          2️⃣ 로그인 → <strong>API Keys</strong> 메뉴 클릭<br>
+          3️⃣ <strong>Create Key</strong> 버튼 클릭<br>
+          4️⃣ 생성된 키 복사 → 위에 붙여넣기
+        </div>
+      </div>
     </div>
   </div>
 
@@ -487,9 +549,16 @@ async function getSupply(code) {
 //  CLAUDE API
 // ─────────────────────────────────────────────────────────────
 async function callClaude(system, user) {
+  const apiKey = localStorage.getItem("claude_api_key");
+  if (!apiKey) { go("settings"); throw new Error("API 키를 먼저 입력해주세요"); }
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
     body: JSON.stringify({
       model: "claude-sonnet-4-20250514",
       max_tokens: 1200,
@@ -926,8 +995,47 @@ async function startSupply() {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  HELPERS
+//  API 키 관리
 // ─────────────────────────────────────────────────────────────
+function saveApiKey() {
+  const key = document.getElementById("api-key-input").value.trim();
+  if (!key.startsWith("sk-ant-")) {
+    document.getElementById("key-status").innerHTML = `<span style="color:var(--red)">❌ 올바른 형식이 아닙니다 (sk-ant- 로 시작해야 함)</span>`;
+    return;
+  }
+  localStorage.setItem("claude_api_key", key);
+  document.getElementById("key-status").innerHTML = `<span style="color:var(--green)">✅ 저장 완료! 이제 분석을 사용할 수 있습니다</span>`;
+}
+
+function saveApiKey2() {
+  const key = document.getElementById("api-key-input2").value.trim();
+  if (!key.startsWith("sk-ant-")) {
+    document.getElementById("key-status2").innerHTML = `<span style="color:var(--red)">❌ 올바른 형식이 아닙니다</span>`;
+    return;
+  }
+  localStorage.setItem("claude_api_key", key);
+  document.getElementById("key-status2").innerHTML = `<span style="color:var(--green)">✅ 저장 완료!</span>`;
+  setTimeout(() => go("home"), 800);
+}
+
+// 앱 시작 시 API 키 확인
+window.addEventListener("load", () => {
+  const key = localStorage.getItem("claude_api_key");
+  if (!key) {
+    // 키 없으면 설정 화면으로
+    document.querySelectorAll(".screen").forEach(s => s.classList.add("hidden"));
+    document.getElementById("screen-settings").classList.remove("hidden");
+  }
+  // 마이 탭에 저장된 키 미리 표시
+  if (key) {
+    const el = document.getElementById("api-key-input");
+    if (el) el.value = key;
+    const st = document.getElementById("key-status");
+    if (st) st.innerHTML = `<span style="color:var(--green)">✅ API 키 저장됨</span>`;
+  }
+});
+
+
 function renderError(msg, retryFn) {
   return `
     <div class="err-box">
